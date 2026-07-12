@@ -25,3 +25,24 @@ replay_pid*
 
 # Kotlin Gradle plugin data, see https://kotlinlang.org/docs/whatsnew20.html#new-directory-for-kotlin-data-in-gradle-projects
 .kotlin/
+
+# Системный мусор IDEA
+.idea/
+/shelf/
+/workspace.xml
+/httpRequests/
+/queries/
+/dataSources/
+/dataSources.local.xml
+*.iml
+*.iws
+*.ipr
+out/
+
+# Сборщик и компиляция
+build/
+.gradle/
+
+# Операционная система и логи
+*.log
+.DS_Store
