@@ -1,9 +1,9 @@
 package core.models.graph
 
 class Graph{
-    val vertexes = mutableListOf<Int>()
+    val vertexes = mutableListOf<Vertex>()
     val edges = mutableListOf<Edge>()
-    val vertices get() = vertexes
+
     // Проверяет повторное вхождение ребра в граф
     fun hasEdge(edge: Edge): Boolean {
         // any пройдется по всему списку
@@ -14,5 +14,4 @@ class Graph{
     }
 
     // Проверка на правильность заполнения (from->to->w)
-
 }
