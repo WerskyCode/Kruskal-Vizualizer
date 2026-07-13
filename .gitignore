@@ -39,10 +39,6 @@ replay_pid*
 *.ipr
 out/
 
-# Сборщик и компиляция
-build/
-.gradle/
-
 # Операционная система и логи
 *.log
 .DS_Store
