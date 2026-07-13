@@ -46,3 +46,7 @@ build/
 # Операционная система и логи
 *.log
 .DS_Store
+
+# Песочница для тестов
+Sandbox.kt
+test.txt
