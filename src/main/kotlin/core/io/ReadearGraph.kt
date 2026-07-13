@@ -4,6 +4,7 @@ import java.util.Scanner
 import java.io.File
 import core.models.graph.Graph
 import core.models.graph.Edge
+import core.models.graph.Vertex
 import java.io.FileNotFoundException
 import java.util.InputMismatchException
 
@@ -15,6 +16,11 @@ fun readGraphFromFile(fileName: String): Graph {
         Scanner(File(fileName)).use { scanner ->
             val countVertexes = scanner.nextInt()
             val countEdges = scanner.nextInt()
+
+            // Считывание id ребра. Переделано для класса Vertex
+            repeat(countVertexes) { i ->
+                graph.vertexes.add(Vertex(id = i))
+            }
 
            repeat(countEdges) {
                val edge = Edge(scanner.nextInt(), scanner.nextInt(), scanner.nextInt())
