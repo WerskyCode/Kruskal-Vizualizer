@@ -39,6 +39,10 @@ replay_pid*
 *.ipr
 out/
 
+# Временный мусор  Gradle
+.gradle/
+build/
+
 # Операционная система и логи
 *.log
 .DS_Store
