@@ -384,7 +384,7 @@ class MainController {
                 val graph = readGraphFromFile(file.absolutePath)
                 canvas.loadGraph(graph)
                 logArea.appendText("Граф загружен из ${file.name}\n")
-                logArea.appendText("Вершин: ${graph.vertices.size}, Ребер: ${graph.edges.size}\n")
+                logArea.appendText("Вершин: ${graph.vertexes.size}, Ребер: ${graph.edges.size}\n")
                 drawMiniMap()  // Обновляем мини-карту
             } catch (e: Exception) {
                 showAlert("Ошибка загрузки", "Не удалось загрузить файл: ${e.message}")
@@ -411,7 +411,7 @@ class MainController {
 
     private fun saveGraphToFile(file: File, graph: Graph) {
         FileWriter(file).use { writer ->
-            writer.write("${graph.vertices.size} ${graph.edges.size}\n")
+            writer.write("${graph.vertexes.size} ${graph.edges.size}\n")
             graph.edges.forEach { edge ->
                 writer.write("${edge.from} ${edge.to} ${edge.weight}\n")
             }

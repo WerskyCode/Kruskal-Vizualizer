@@ -2,6 +2,7 @@ package ui
 
 import core.models.graph.Edge
 import core.models.graph.Graph
+import core.models.graph.Vertex
 import javafx.scene.canvas.Canvas
 import javafx.scene.canvas.GraphicsContext
 import javafx.scene.input.MouseEvent
@@ -47,7 +48,7 @@ class GraphCanvas : Canvas(1000.0, 600.0) {
     private fun createVertex(x: Double, y: Double) {
         val id = nextVertexId++
         vertices[id] = VertexData(id, x, y)
-        graph.vertexes.add(id)
+        graph.vertexes.add(Vertex(id))
         onVertexAdded?.invoke(id, x, y)
         draw()
     }
@@ -113,9 +114,10 @@ class GraphCanvas : Canvas(1000.0, 600.0) {
         vertices.clear()
         edges.clear()
         edgeStates.clear()
-        nextVertexId = graph.vertexes.maxOrNull()?.plus(1) ?: 0
+        nextVertexId = graph.vertexes.maxOfOrNull{ it.id }?.plus(1) ?: 0
 
-        graph.vertexes.forEach { id ->
+        graph.vertexes.forEach { vertex ->
+            val id = vertex.id
             val x = 100.0 + (id * 150) % (width - 200)
             val y = 100.0 + (id * 100) % (height - 200)
             vertices[id] = VertexData(id, x, y)
