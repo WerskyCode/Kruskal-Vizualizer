@@ -1,8 +1,11 @@
 package ui
 
+import core.kruskal.KruskalStep
 import core.models.graph.Edge
 import core.models.graph.Graph
 import core.models.graph.Vertex
+import kotlin.math.pow
+import kotlin.math.sqrt
 import javafx.scene.canvas.Canvas
 import javafx.scene.canvas.GraphicsContext
 import javafx.scene.input.MouseEvent
@@ -12,13 +15,12 @@ import javafx.scene.text.TextAlignment
 class GraphCanvas : Canvas(1000.0, 600.0) {
     var graph = Graph()
 
-    private var vertices = mutableMapOf<Int, VertexData>()     //Локальное хранилище вершин с координатами(для отрисовки)
-    private var edges = mutableListOf<EdgeData>()
+    private var vertexes = mutableMapOf<Int, Vertex>()     //Локальное хранилище вершин с координатами(для отрисовки)
+    private var edges = mutableListOf<Edge>()
 
 
     private var selectedVertex: Int? = null
     private var nextVertexId = 0
-
 
     private var edgeStates = mutableMapOf<Edge, EdgeState>()
 
@@ -40,14 +42,27 @@ class GraphCanvas : Canvas(1000.0, 600.0) {
             if (clickedVertex != null) {
                 handleVertexClick(clickedVertex)
             } else {
-                createVertex(x, y)
+                val isTooClose = vertexes.values.any { existing ->
+                    val distance = sqrt((existing.x - x).pow(2.0) + (existing.y - y).pow(2.0))
+                    distance < VERTEX_RADIUS * 2.0
+                }
+
+                if (isTooClose) {
+                    showAlert(
+                        "Ошибка размещения",
+                        "Нельзя поставить вершину так близко к другой!"
+                        )
+                } else {
+                    createVertex(x, y)
+                }
             }
+
         }
     }
 
     private fun createVertex(x: Double, y: Double) {
         val id = nextVertexId++
-        vertices[id] = VertexData(id, x, y)
+        vertexes[id] = Vertex(id, x, y)
         graph.vertexes.add(Vertex(id))
         onVertexAdded?.invoke(id, x, y)
         draw()
@@ -86,7 +101,7 @@ class GraphCanvas : Canvas(1000.0, 600.0) {
             try {
                 val weight = weightStr.toInt()
                 val edge = Edge(from, to, weight)
-                edges.add(EdgeData(from, to, weight))
+                edges.add(Edge(from, to, weight))
                 graph.edges.add(edge)
                 edgeStates[edge] = EdgeState.PENDING
                 onEdgeAdded?.invoke(from, to, weight)
@@ -98,48 +113,116 @@ class GraphCanvas : Canvas(1000.0, 600.0) {
     }
 
     private fun findVertexAt(x: Double, y: Double): Int? {
-        vertices.forEach { (id, vertex) ->
-            val distance = Math.sqrt(
-                Math.pow(vertex.x - x, 2.0) + Math.pow(vertex.y - y, 2.0)
-            )
+        /*
+        Лучше так не писать, потому что если менять forEach на !in-line функцию,
+        то оператор return внутри {} лямбда функции будет выдавать ошибку (возврата в findVertexAt нет)
+        vertexes.forEach { (id, vertex) ->
+            val distance = sqrt((vertex.x - x).pow(2.0) + (vertex.y - y).pow(2.0))
             if (distance < VERTEX_RADIUS) {
                 return id
             }
         }
         return null
+
+        Поэтому такой вариант будет лучше
+        */
+        return vertexes.values // берем значение
+            .find {  vertex ->
+                sqrt((vertex.x - x).pow(2.0) + (vertex.y - y).pow(2.0)) < VERTEX_RADIUS
+            }
+            ?.id
+
     }
 
     fun loadGraph(graph: Graph) {
         this.graph = graph
-        vertices.clear()
+        vertexes.clear()
         edges.clear()
         edgeStates.clear()
-        nextVertexId = graph.vertexes.maxOfOrNull{ it.id }?.plus(1) ?: 0
+        nextVertexId = graph.vertexes.maxOfOrNull { it.id }?.plus(1) ?: 0
 
-        graph.vertexes.forEach { vertex ->
+        val totalVertices = graph.vertexes.size
+
+        // Находим центр холста
+        val centerX = width / 2.0
+        val centerY = height / 2.0
+
+        // Выбираем радиус так, чтобы вершины не прижимались вплотную к краям экрана
+        val radius = minOf(width, height) / 2.5
+
+        graph.vertexes.forEachIndexed { index, vertex ->
             val id = vertex.id
-            val x = 100.0 + (id * 150) % (width - 200)
-            val y = 100.0 + (id * 100) % (height - 200)
-            vertices[id] = VertexData(id, x, y)
+
+            // Распределяем угол равномерно: 2 * PI * (текущий_индекс / всего_вершин)
+            val angle = 2.0 * Math.PI * index / totalVertices
+
+            // Считаем тригонометрические координаты
+            val x = centerX + radius * Math.cos(angle)
+            val y = centerY + radius * Math.sin(angle)
+
+            vertexes[id] = Vertex(id, x, y)
         }
 
+        // Загружаем рёбра
         graph.edges.forEach { edge ->
-            edges.add(EdgeData(edge.from, edge.to, edge.weight))
+            edges.add(Edge(edge.from, edge.to, edge.weight))
             edgeStates[edge] = EdgeState.PENDING
         }
 
         draw()
     }
 
-    fun stepForward(): AlgorithmStepResult {
+    // Не то, не должен знать канвас про алгоритм
+    /*fun stepForward(): AlgorithmStepResult {
         return AlgorithmStepResult("Алгоритм не реализован (backend)", 0, 0, false)
     }
 
 
     fun stepBackward(): AlgorithmStepResult {
         return AlgorithmStepResult("Откат не реализован (backend)", 0, 0, false)
+    }*/
+
+    // Вместо этого попробую делать подсветку нужного шага и все.
+    // Этот метод подсвечивает ребро на шаге вперед
+    fun highlightStep(step: KruskalStep) {
+        val edgeOnCanvas = edges.find {
+            (it.from == step.edge.from && it.to == step.edge.to) ||
+                    (it.to == step.edge.from && it.from == step.edge.to)
+        }
+
+        if (edgeOnCanvas != null) {
+            // Если isAdded, то зеленый, а если создает цикл, то красим в красный
+            edgeStates[edgeOnCanvas] = if (step.isAdded) EdgeState.ADDED else EdgeState.REJECTED
+            // Обновление экрана
+            draw()
+        }
     }
 
+    // Данный метод при возврате шага красит выделенное ребро в серый
+    fun unhighlightStep(step: KruskalStep) {
+        val edgeOnCanvas = edges.find {
+            (it.from == step.edge.from && it.to == step.edge.to) ||
+                    (it.to == step.edge.from && it.from == step.edge.to)
+        }
+
+        if (edgeOnCanvas != null) {
+            edgeStates[edgeOnCanvas] = EdgeState.PENDING
+            draw()
+        }
+
+    }
+
+    // Метод для временной подсветки текущего проверяемого ребра желтым
+    fun highlightCurrentEdge(step: KruskalStep) {
+        val edgeOnCanvas = edges.find {
+            (it.from == step.edge.from && it.to == step.edge.to) ||
+                    (it.to == step.edge.from && it.from == step.edge.to)
+        }
+        if (edgeOnCanvas != null) {
+            edgeStates[edgeOnCanvas] = EdgeState.CURRENT
+            draw()
+        }
+    }
 
     fun reset() {
         edgeStates.clear()
@@ -151,7 +234,7 @@ class GraphCanvas : Canvas(1000.0, 600.0) {
 
     fun clear() {
         graph = Graph()
-        vertices.clear()
+        vertexes.clear()
         edges.clear()
         edgeStates.clear()
         nextVertexId = 0
@@ -164,8 +247,8 @@ class GraphCanvas : Canvas(1000.0, 600.0) {
         gc.clearRect(0.0, 0.0, width, height)
 
         edges.forEach { edgeData ->
-            val fromVertex = vertices[edgeData.from] ?: return@forEach
-            val toVertex = vertices[edgeData.to] ?: return@forEach
+            val fromVertex = vertexes[edgeData.from] ?: return@forEach
+            val toVertex = vertexes[edgeData.to] ?: return@forEach
 
             val edge = Edge(edgeData.from, edgeData.to, edgeData.weight)
             val state = edgeStates[edge] ?: EdgeState.PENDING
@@ -173,12 +256,12 @@ class GraphCanvas : Canvas(1000.0, 600.0) {
             drawEdge(gc, fromVertex, toVertex, edgeData.weight, state)
         }
 
-        vertices.values.forEach { vertex ->
+        vertexes.values.forEach { vertex ->
             drawVertex(gc, vertex, vertex.id == selectedVertex)
         }
     }
 
-    private fun drawVertex(gc: GraphicsContext, vertex: VertexData, isSelected: Boolean) {
+    private fun drawVertex(gc: GraphicsContext, vertex: Vertex, isSelected: Boolean) {
         gc.fill = if (isSelected) Color.ORANGE else Color.STEELBLUE
         gc.stroke = Color.BLACK
         gc.lineWidth = 2.0
@@ -207,8 +290,8 @@ class GraphCanvas : Canvas(1000.0, 600.0) {
 
     private fun drawEdge(
         gc: GraphicsContext,
-        from: VertexData,
-        to: VertexData,
+        from: Vertex,
+        to: Vertex,
         weight: Int,
         state: EdgeState
     ) {
@@ -216,7 +299,7 @@ class GraphCanvas : Canvas(1000.0, 600.0) {
             EdgeState.ADDED -> Color.LIMEGREEN
             EdgeState.CURRENT -> Color.YELLOW
             EdgeState.REJECTED -> Color.RED
-            EdgeState.PENDING -> Color.GRAY
+            EdgeState.PENDING -> Color.DARKGRAY
         }
 
         gc.stroke = color
@@ -239,8 +322,9 @@ class GraphCanvas : Canvas(1000.0, 600.0) {
         alert.showAndWait()
     }
 
-    fun getVertices(): Map<Int, VertexData> = vertices
-    fun getEdges(): List<EdgeData> = edges
+    // Надо не забыть махнуть на геттеры из основного класса Graph
+    fun getVertices(): Map<Int, Vertex> = vertexes
+    fun getEdges(): List<Edge> = edges
     fun getEdgeState(edge: Edge): EdgeState? = edgeStates[edge]
 
     companion object {
@@ -248,13 +332,9 @@ class GraphCanvas : Canvas(1000.0, 600.0) {
     }
 }
 
-data class VertexData(val id: Int, val x: Double, val y: Double)
-
-data class EdgeData(val from: Int, val to: Int, val weight: Int)
-
 enum class EdgeState {
-    PENDING,    // Ожидает проверки
-    CURRENT,    // Текущее проверяемое
-    ADDED,      // Добавлено в MST
-    REJECTED    // Отклонено
+    PENDING,    // Ожидает проверки (сер)
+    CURRENT,    // Текущее проверяемое (ж)
+    ADDED,      // Добавлено в MST (зел)
+    REJECTED    // Отклонено (кр)
 }

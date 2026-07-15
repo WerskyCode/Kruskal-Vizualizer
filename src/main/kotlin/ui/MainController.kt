@@ -21,7 +21,7 @@ class MainController {
     private val statsLabel = Label("Готов к работе")
 
     // Элементы управления
-    private val stepForwardBtn = Button("Шаг вперед")
+    private val stepForwardBtn = Button("Шаг вперёд")
     private val stepBackBtn = Button("Шаг назад")
     private val startBtn = Button("Автозапуск")
     private val pauseBtn = Button("Пауза")
@@ -40,10 +40,16 @@ class MainController {
     private var isRunning = false
     private var currentStep = 0
     private var totalSteps = 0
+    private var kruskal: core.kruskal.KruskalAlgorithm? = null
+    private var isCurrentStepHighlightedYellow = false
+    private var previousHighlightedEdge: core.models.graph.Edge? = null
 
     init {
         setupUI()
         setupEventHandlers()
+
+        drawMiniMap()
+        updateButtonStates()
     }
 
     private fun setupUI() {
@@ -81,18 +87,18 @@ class MainController {
                 style = "-fx-font-size: 16px; -fx-font-weight: bold;"
             }
 
-            val stepForwardBtnStyled = Button("Шаг вперед").apply {
+            stepForwardBtn.apply {
                 prefWidth = 200.0
                 prefHeight = 40.0
             }
-            val stepBackBtnStyled = Button("Шаг назад").apply {
+            stepBackBtn.apply {
                 prefWidth = 200.0
                 prefHeight = 40.0
             }
             val currentStepLabel = Label("[Current: Step 0]").apply {
                 style = "-fx-font-size: 14px; -fx-font-family: monospace;"
             }
-            val resetBtnStyled = Button("Перезапуск").apply {
+            resetBtn.apply {
                 prefWidth = 200.0
                 prefHeight = 40.0
             }
@@ -125,10 +131,10 @@ class MainController {
             children.addAll(
                 titleLabel,
                 Separator(),
-                stepForwardBtnStyled,
-                stepBackBtnStyled,
+                stepForwardBtn,
+                stepBackBtn,
                 currentStepLabel,
-                resetBtnStyled,
+                resetBtn,
                 speedTitleLabel,
                 speedControlBox,
                 speedLabel,
@@ -315,18 +321,119 @@ class MainController {
             return
         }
 
-        val result = canvas.stepForward()
-        updateStats(result)
-        logArea.appendText("Шаг ${currentStep + 1}: ${result.message}\n")
-        currentStep++
+        if (kruskal == null) {
+            // 1. Оставляем в списке исходного графа только уникальные связи
+            val uniqueEdges = canvas.graph.edges.distinctBy {
+                if (it.from < it.to) "${it.from}-${it.to}" else "${it.to}-${it.from}"
+            }
+            canvas.graph.edges.clear()
+            canvas.graph.edges.addAll(uniqueEdges)
+
+            // 2. Скармливаем алгоритму очищенный граф
+            kruskal = core.kruskal.KruskalAlgorithm(canvas.graph).apply { run() }
+
+            totalSteps = kruskal!!.steps.size
+            currentStep = 0
+            isCurrentStepHighlightedYellow = false
+        }
+
+        val algorithm = kruskal!!
+
+        if (currentStep < totalSteps) {
+            val step = algorithm.steps[currentStep]
+
+            if (!isCurrentStepHighlightedYellow) {
+                // Желтое ребро
+                canvas.highlightCurrentEdge(step)
+                logArea.appendText("Шаг ${currentStep + 1}: рассматриваем ребро (${step.edge.from} - ${step.edge.to}) с весом ${step.edge.weight}. ")
+                isCurrentStepHighlightedYellow = true
+            } else {
+                // Фикса цвета
+                canvas.unhighlightStep(step)
+                canvas.highlightStep(step)
+
+                val logMsg = if (step.isAdded) {
+                    "Ребро (${step.edge.from} - ${step.edge.to}) с весом ${step.edge.weight} добавлено в MST"
+                } else {
+                    "Ребро (${step.edge.from} - ${step.edge.to}) с весом ${step.edge.weight} не добавлено в MST (цикл)"
+                }
+
+                logArea.appendText(logMsg + "\n")
+
+                val result = AlgorithmStepResult(logMsg, step.currentWeight, step.countEdges, step.isAdded)
+                updateStats(result)
+
+                currentStep++
+                isCurrentStepHighlightedYellow = false // Сбрасываем флаг для следующего ребра
+
+                // обновление статуса кнопок ибо надо смотреть можно ли назад/вперед
+                updateButtonStates()
+            }
+
+        } else {
+            val mstEdges = algorithm.steps.filter { it.isAdded }.map { it.edge }
+            val totalWeight = mstEdges.sumOf { it.weight }
+            val totalVertexes = canvas.graph.vertexes.size
+
+            logArea.appendText("Алгоритм завершен\n")
+
+            if (mstEdges.size == totalVertexes - 1) {
+                logArea.appendText("MST построено успешно\n")
+                logArea.appendText("Список ребер:\n")
+                mstEdges.forEach { edge ->
+                    logArea.appendText("№ Вершины ${edge.from} <-> № Вершины ${edge.to} (вес: ${edge.weight})\n")
+                }
+                logArea.appendText("Общий вес MST: $totalWeight\n")
+            } else {
+                logArea.appendText("Поскольку исходный граф несвязный, успешно построен минимальный остовный лес. \n")
+                logArea.appendText("Список ребер леса:\n")
+                mstEdges.forEach { edge ->
+                    logArea.appendText("№ Вершины ${edge.from} <-> № Вершины ${edge.to} (вес: ${edge.weight})\n")
+                }
+                logArea.appendText("Общий вес остовного леса: $totalWeight\n")
+            }
+
+            isRunning = false
+            updateButtonStates()
+        }
     }
 
     private fun stepBackward() {
+        val algorithm = kruskal ?: return
+
+        // Если мы находимся в середине шага (горит желтый), просто гасим его и возвращаем к обычному состоянию
+        if (isCurrentStepHighlightedYellow) {
+            if (currentStep < totalSteps) {
+                val step = algorithm.steps[currentStep]
+                canvas.unhighlightStep(step) // Гасим желтый цвет на холсте
+            }
+            isCurrentStepHighlightedYellow = false // Возвращаем фазу в начало
+            logArea.appendText("Откат: Снят фокус с текущего ребра\n")
+            return
+        }
+
+        // Если желтый не горел, значит мы откатываем полностью завершенный шаг назад
         if (currentStep > 0) {
-            val result = canvas.stepBackward()
-            updateStats(result)
-            logArea.appendText("Откат к шагу ${currentStep - 1}\n")
             currentStep--
+            val step = algorithm.steps[currentStep]
+
+            canvas.unhighlightStep(step) // Красим ребро обратно в серый (PENDING)
+
+            logArea.appendText("Откат: Шаг ${currentStep + 1} отменен \n")
+
+            // Обновляем статистику на основе предыдущего шага
+            if (currentStep > 0) {
+                val prevStep = algorithm.steps[currentStep - 1]
+                val result = AlgorithmStepResult("", prevStep.currentWeight, prevStep.countEdges, prevStep.isAdded)
+                updateStats(result)
+            } else {
+                updateStats(null)
+            }
+
+            // После отката шага мы находимся в состоянии, когда это ребро еще не исследовано (следующий шаг вперед должен подсветить его желтым)
+            isCurrentStepHighlightedYellow = false
+
+            updateButtonStates()
         }
     }
 
@@ -336,10 +443,24 @@ class MainController {
             return
         }
 
+        if (kruskal == null) {
+            // Очищаем граф от дубликатов на лету
+            val uniqueEdges = canvas.graph.edges.distinctBy {
+                if (it.from < it.to) "${it.from}-${it.to}" else "${it.to}-${it.from}"
+            }
+            canvas.graph.edges.clear()
+            canvas.graph.edges.addAll(uniqueEdges)
+
+            kruskal = core.kruskal.KruskalAlgorithm(canvas.graph).apply { run() }
+            totalSteps = kruskal!!.steps.size
+            currentStep = 0
+            isCurrentStepHighlightedYellow = false
+        }
+
         isRunning = true
         logArea.appendText("Запуск алгоритма...\n")
 
-        //Запускаем автоматическое выполнение
+        // Запускаем автоматическое выполнение
         Thread {
             while (isRunning && currentStep < totalSteps) {
                 Thread.sleep((11 - speedSlider.value).toLong() * 100)
@@ -358,11 +479,14 @@ class MainController {
 
     private fun resetAlgorithm() {
         isRunning = false
+        isCurrentStepHighlightedYellow = false
         currentStep = 0
         canvas.reset()
+        kruskal = null
         logArea.appendText("Сброс алгоритма\n")
         updateStats(null)
         drawMiniMap()  // Обновляем мини-карту
+        updateButtonStates()
     }
 
     private fun clearGraph() {
@@ -382,6 +506,11 @@ class MainController {
         if (file != null) {
             try {
                 val graph = readGraphFromFile(file.absolutePath)
+
+                if (graph.vertexes.isEmpty() || graph.edges.isEmpty()) {
+                    throw NoSuchElementException("файл пуст или не содержит корректных данных графа")
+                }
+
                 canvas.loadGraph(graph)
                 logArea.appendText("Граф загружен из ${file.name}\n")
                 logArea.appendText("Вершин: ${graph.vertexes.size}, Ребер: ${graph.edges.size}\n")
@@ -418,11 +547,32 @@ class MainController {
         }
     }
 
+    private fun updateButtonStates(){
+        // Стартовое состояние кнопок
+        if (kruskal == null || currentStep == 0) {
+            stepBackBtn.isDisable = true
+            stepForwardBtn.isDisable = false
+        }
+
+        // Конечное состояние кнопок
+        else if (currentStep >= totalSteps && !isCurrentStepHighlightedYellow) {
+            stepBackBtn.isDisable = false
+            stepForwardBtn.isDisable = true
+        }
+
+        else {
+            stepBackBtn.isDisable = false
+            stepForwardBtn.isDisable = false
+        }
+
+
+    }
+
     private fun updateStats(result: AlgorithmStepResult?) {
         if (result != null) {
             mstWeightLabel.text = "Вес MST: ${result.currentWeight}"
             edgesCountLabel.text = "Ребер в MST: ${result.edgesCount}"
-            stepLabel.text = "Шаг: ${currentStep + 1}/${totalSteps}"
+            stepLabel.text = "Шаг: ${currentStep}/${totalSteps}"
         } else {
             mstWeightLabel.text = "Вес MST: 0"
             edgesCountLabel.text = "Ребер в MST: 0"
