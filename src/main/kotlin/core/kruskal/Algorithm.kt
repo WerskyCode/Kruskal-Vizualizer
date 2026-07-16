@@ -3,7 +3,6 @@ package core.kruskal
 import core.models.graph.Graph
 import core.models.graph.Edge
 import core.models.graph.Vertex
-import core.kruskal.Dsu
 
 class KruskalAlgorithm(val graph: Graph){
     val finalEdges = mutableListOf<Edge>()
@@ -33,8 +32,6 @@ class KruskalAlgorithm(val graph: Graph){
                 )
             )
         }
-
-        val totalWeight = finalEdges.sumOf { it.weight } // Вес MST
 
     }
 

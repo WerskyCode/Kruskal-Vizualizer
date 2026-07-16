@@ -49,7 +49,7 @@ dependencies {
     }
 }
 
-// 3. Для обычного запуска через Gradle оставляем лаунчер
+// Для обычного запуска через Gradle оставляем лаунчер
 application {
     mainClass.set("ui.AppLauncherKt")
 }
@@ -74,7 +74,7 @@ tasks.withType<JavaExec> {
     }
 }
 
-// 4. Настройка сборщика Shadow JAR — указываем точку входа
+// Настройка сборщика Shadow JAR — указываем точку входа
 tasks.named<org.gradle.api.Task>("shadowJar") {
     doFirst {
         val jarTask = this as? com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar

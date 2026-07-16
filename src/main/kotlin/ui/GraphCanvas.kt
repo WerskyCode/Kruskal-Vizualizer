@@ -4,13 +4,13 @@ import core.kruskal.KruskalStep
 import core.models.graph.Edge
 import core.models.graph.Graph
 import core.models.graph.Vertex
-import kotlin.math.pow
-import kotlin.math.sqrt
 import javafx.scene.canvas.Canvas
 import javafx.scene.canvas.GraphicsContext
 import javafx.scene.input.MouseEvent
 import javafx.scene.paint.Color
 import javafx.scene.text.TextAlignment
+import kotlin.math.pow
+import kotlin.math.sqrt
 
 class GraphCanvas : Canvas(1000.0, 600.0) {
     var graph = Graph()
@@ -26,6 +26,8 @@ class GraphCanvas : Canvas(1000.0, 600.0) {
 
     var onVertexAdded: ((Int, Double, Double) -> Unit)? = null
     var onEdgeAdded: ((Int, Int, Int) -> Unit)? = null
+    var onVertexRemoved: ((Int) -> Unit)? = null
+    var onEdgeRemoved: ((Edge) -> Unit)? = null
 
     init {
         setupMouseHandlers()
@@ -37,26 +39,49 @@ class GraphCanvas : Canvas(1000.0, 600.0) {
             val x = event.x
             val y = event.y
 
-            val clickedVertex = findVertexAt(x, y)
-
-            if (clickedVertex != null) {
-                handleVertexClick(clickedVertex)
-            } else {
-                val isTooClose = vertexes.values.any { existing ->
-                    val distance = sqrt((existing.x - x).pow(2.0) + (existing.y - y).pow(2.0))
-                    distance < VERTEX_RADIUS * 2.0
-                }
-
-                if (isTooClose) {
-                    showAlert(
-                        "Ошибка размещения",
-                        "Нельзя поставить вершину так близко к другой!"
-                        )
-                } else {
-                    createVertex(x, y)
-                }
+            // Проверяем, запущен ли алгоритм. Если запущен, блокируем любые изменения
+            // Алгоритм активен когда ребра любого цвета кроме серого (хотя бы 1 любого цвета)
+            val hasActiveAlgorithm = edgeStates.values.any { it != EdgeState.PENDING }
+            if (hasActiveAlgorithm) {
+                showAlert("Блокировка", "Нельзя редактировать граф во время работы алгоритма! Сбросьте его.")
+                return@addEventHandler
             }
 
+            if (event.button == javafx.scene.input.MouseButton.PRIMARY) {
+                // ЛЕВАЯ КНОПКА: Добавление и выбор вершин/рёбер (Твой старый код)
+                val clickedVertex = findVertexAt(x, y)
+
+                if (clickedVertex != null) {
+                    handleVertexClick(clickedVertex)
+                } else {
+                    val isTooClose = vertexes.values.any { existing ->
+                        val distance = sqrt((existing.x - x).pow(2.0) + (existing.y - y).pow(2.0))
+                        distance < VERTEX_RADIUS * 2.0
+                    }
+
+                    if (isTooClose) {
+                        showAlert(
+                            "Ошибка размещения",
+                            "Нельзя поставить вершину так близко к другой!"
+                        )
+                    } else {
+                        createVertex(x, y)
+                    }
+                }
+            } else if (event.button == javafx.scene.input.MouseButton.SECONDARY) {
+                // ПРАВАЯ КНОПКА: Удаление
+                val clickedVertex = findVertexAt(x, y)
+                if (clickedVertex != null) {
+                    // Если кликнули ПКМ по вершине -> удаляем её
+                    removeVertexAndConnectedEdges(clickedVertex)
+                } else {
+                    // Если кликнули ПКМ не по вершине -> проверяем, попали ли по ребру
+                    val clickedEdge = findEdgeAt(x, y)
+                    if (clickedEdge != null) {
+                        removeEdge(clickedEdge)
+                    }
+                }
+            }
         }
     }
 
@@ -132,6 +157,54 @@ class GraphCanvas : Canvas(1000.0, 600.0) {
             }
             ?.id
 
+    }
+
+    private fun findEdgeAt(x: Double, y: Double): Edge? {
+        val clickRadius = 15.0 // Радиус чувствительности клика вокруг центра ребра (где цифра веса)
+        return edges.find { edge ->
+            val fromVertex = vertexes[edge.from] ?: return@find false
+            val toVertex = vertexes[edge.to] ?: return@find false
+
+            val midX = (fromVertex.x + toVertex.x) / 2.0
+            val midY = (fromVertex.y + toVertex.y) / 2.0
+
+            val distance = sqrt((midX - x).pow(2.0) + (midY - y).pow(2.0))
+            distance < clickRadius
+        }
+    }
+
+    private fun removeVertexAndConnectedEdges(vertexId: Int) {
+        // Находим все связанные рёбра
+        val connectedEdges = edges.filter { it.from == vertexId || it.to == vertexId }
+
+        // Удаляем рёбра из локального списка, состояний и структуры графа
+        connectedEdges.forEach { edge ->
+            edges.remove(edge)
+            edgeStates.remove(edge)
+            graph.edges.removeIf { (it.from == edge.from && it.to == edge.to) || (it.from == edge.to && it.to == edge.from) }
+        }
+
+        // Удаляем саму вершину
+        vertexes.remove(vertexId)
+        graph.vertexes.removeIf { it.id == vertexId }
+
+        // Сбрасываем выделение, если удалили выбранную для связи вершину
+        if (selectedVertex == vertexId) {
+            selectedVertex = null
+        }
+
+        // Вызываем коллбек для логов в контроллере
+        onVertexRemoved?.invoke(vertexId)
+        draw()
+    }
+
+    private fun removeEdge(edge: Edge) {
+        edges.remove(edge)
+        edgeStates.remove(edge)
+        graph.edges.removeIf { (it.from == edge.from && it.to == edge.to) || (it.from == edge.to && it.to == edge.from) }
+
+        onEdgeRemoved?.invoke(edge)
+        draw()
     }
 
     fun loadGraph(graph: Graph) {

@@ -1,7 +1,8 @@
 package ui
 
-import core.models.graph.Graph
 import core.io.readGraphFromFile
+import core.kruskal.KruskalStep
+import core.models.graph.Graph
 import javafx.geometry.Insets
 import javafx.geometry.Pos
 import javafx.scene.canvas.Canvas
@@ -313,6 +314,16 @@ class MainController {
             logArea.appendText("Добавлено ребро $from -> $to с весом $weight\n")
             drawMiniMap()  // Обновляем мини-карту
         }
+
+        canvas.onVertexRemoved = { id ->
+            logArea.appendText("Удалена вершина $id и все связанные с ней рёбра.\n")
+            drawMiniMap()
+        }
+
+        canvas.onEdgeRemoved = { edge ->
+            logArea.appendText("Удалено ребро ${edge.from} <-> ${edge.to} (вес: ${edge.weight}).\n")
+            drawMiniMap()
+        }
     }
 
     private fun stepForward() {
@@ -360,39 +371,25 @@ class MainController {
 
                 logArea.appendText(logMsg + "\n")
 
-                val result = AlgorithmStepResult(logMsg, step.currentWeight, step.countEdges, step.isAdded)
-                updateStats(result)
+                updateStats(step)
 
                 currentStep++
                 isCurrentStepHighlightedYellow = false // Сбрасываем флаг для следующего ребра
+
+                if (currentStep >= totalSteps) {
+                    showCompletionMessage(algorithm)
+                    isRunning = false
+                    updateButtonStates()
+                    return
+                }
 
                 // обновление статуса кнопок ибо надо смотреть можно ли назад/вперед
                 updateButtonStates()
             }
 
         } else {
-            val mstEdges = algorithm.steps.filter { it.isAdded }.map { it.edge }
-            val totalWeight = mstEdges.sumOf { it.weight }
-            val totalVertexes = canvas.graph.vertexes.size
-
-            logArea.appendText("Алгоритм завершен\n")
-
-            if (mstEdges.size == totalVertexes - 1) {
-                logArea.appendText("MST построено успешно\n")
-                logArea.appendText("Список ребер:\n")
-                mstEdges.forEach { edge ->
-                    logArea.appendText("№ Вершины ${edge.from} <-> № Вершины ${edge.to} (вес: ${edge.weight})\n")
-                }
-                logArea.appendText("Общий вес MST: $totalWeight\n")
-            } else {
-                logArea.appendText("Поскольку исходный граф несвязный, успешно построен минимальный остовный лес. \n")
-                logArea.appendText("Список ребер леса:\n")
-                mstEdges.forEach { edge ->
-                    logArea.appendText("№ Вершины ${edge.from} <-> № Вершины ${edge.to} (вес: ${edge.weight})\n")
-                }
-                logArea.appendText("Общий вес остовного леса: $totalWeight\n")
-            }
-
+            // Этот блок на всякий случай, если вдруг currentStep >= totalSteps с самого начала
+            showCompletionMessage(algorithm)
             isRunning = false
             updateButtonStates()
         }
@@ -424,8 +421,7 @@ class MainController {
             // Обновляем статистику на основе предыдущего шага
             if (currentStep > 0) {
                 val prevStep = algorithm.steps[currentStep - 1]
-                val result = AlgorithmStepResult("", prevStep.currentWeight, prevStep.countEdges, prevStep.isAdded)
-                updateStats(result)
+                updateStats(prevStep)
             } else {
                 updateStats(null)
             }
@@ -434,6 +430,30 @@ class MainController {
             isCurrentStepHighlightedYellow = false
 
             updateButtonStates()
+        }
+    }
+
+    private fun showCompletionMessage(algorithm: core.kruskal.KruskalAlgorithm) {
+        val mstEdges = algorithm.steps.filter { it.isAdded }.map { it.edge }
+        val totalWeight = mstEdges.sumOf { it.weight }
+        val totalVertexes = canvas.graph.vertexes.size
+
+        logArea.appendText("Алгоритм завершен\n")
+
+        if (mstEdges.size == totalVertexes - 1) {
+            logArea.appendText("MST построено успешно\n")
+            logArea.appendText("Список ребер:\n")
+            mstEdges.forEach { edge ->
+                logArea.appendText("№ Вершины ${edge.from} <-> № Вершины ${edge.to} (вес: ${edge.weight})\n")
+            }
+            logArea.appendText("Общий вес MST: $totalWeight\n")
+        } else {
+            logArea.appendText("Поскольку исходный граф несвязный, успешно построен минимальный остовный лес. \n")
+            logArea.appendText("Список ребер леса:\n")
+            mstEdges.forEach { edge ->
+                logArea.appendText("№ Вершины ${edge.from} <-> № Вершины ${edge.to} (вес: ${edge.weight})\n")
+            }
+            logArea.appendText("Общий вес остовного леса: $totalWeight\n")
         }
     }
 
@@ -568,10 +588,10 @@ class MainController {
 
     }
 
-    private fun updateStats(result: AlgorithmStepResult?) {
+    private fun updateStats(result: KruskalStep?) {
         if (result != null) {
             mstWeightLabel.text = "Вес MST: ${result.currentWeight}"
-            edgesCountLabel.text = "Ребер в MST: ${result.edgesCount}"
+            edgesCountLabel.text = "Ребер в MST: ${result.countEdges}"
             stepLabel.text = "Шаг: ${currentStep}/${totalSteps}"
         } else {
             mstWeightLabel.text = "Вес MST: 0"
@@ -589,11 +609,3 @@ class MainController {
         alert.showAndWait()
     }
 }
-
-// Класс для хранения результата шага алгоритма
-data class AlgorithmStepResult(
-    val message: String,
-    val currentWeight: Int,
-    val edgesCount: Int,
-    val isEdgeAdded: Boolean
-)
